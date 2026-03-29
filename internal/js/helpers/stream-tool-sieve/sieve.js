@@ -5,8 +5,17 @@ const {
   insideCodeFenceWithState,
 } = require('./state');
 const { parseStandaloneToolCallsDetailed } = require('./parse');
-const { extractJSONObjectFrom } = require('./jsonscan');
-const { TOOL_SEGMENT_KEYWORDS, earliestKeywordIndex } = require('./tool-keywords');
+const { extractJSONObjectFrom, extractToolHistoryBlock, trimWrappingJSONFence } = require('./jsonscan');
+const {
+  TOOL_SEGMENT_KEYWORDS,
+  XML_TOOL_SEGMENT_TAGS,
+  earliestKeywordIndex,
+} = require('./tool-keywords');
+const {
+  consumeXMLToolCapture: consumeXMLToolCaptureImpl,
+  hasOpenXMLToolTag,
+  findPartialXMLToolTagStart,
+} = require('./sieve-xml');
 function processToolSieveChunk(state, chunk, toolNames) {
   if (!state) {
     return [];
@@ -144,6 +153,11 @@ function findSuspiciousPrefixStart(s) {
       start = idx;
     }
   }
+  // Also check for partial XML tool tag at end of string.
+  const xmlIdx = findPartialXMLToolTagStart(s);
+  if (xmlIdx >= 0 && xmlIdx > start) {
+    start = xmlIdx;
+  }
   return start;
 }
 
@@ -154,9 +168,26 @@ function findToolSegmentStart(state, s) {
   const lower = s.toLowerCase();
   let offset = 0;
   while (true) {
-    const { index: bestKeyIdx, keyword: matchedKeyword } = earliestKeywordIndex(lower, TOOL_SEGMENT_KEYWORDS, offset);
+    // Check JSON keywords.
+    let { index: bestKeyIdx, keyword: matchedKeyword } = earliestKeywordIndex(lower, TOOL_SEGMENT_KEYWORDS, offset);
+    // Also check XML tool tags.
+    for (const tag of XML_TOOL_SEGMENT_TAGS) {
+      const idx = lower.indexOf(tag, offset);
+      if (idx >= 0 && (bestKeyIdx < 0 || idx < bestKeyIdx)) {
+        bestKeyIdx = idx;
+        matchedKeyword = tag;
+      }
+    }
     if (bestKeyIdx < 0) {
       return -1;
+    }
+    // For XML tags, the '<' is itself the segment start.
+    if (s[bestKeyIdx] === '<') {
+      if (!insideCodeFenceWithState(state, s.slice(0, bestKeyIdx))) {
+        return bestKeyIdx;
+      }
+      offset = bestKeyIdx + matchedKeyword.length;
+      continue;
     }
     const keyIdx = bestKeyIdx;
     const start = s.slice(0, keyIdx).lastIndexOf('{');
@@ -173,6 +204,17 @@ function consumeToolCapture(state, toolNames) {
   if (!captured) {
     return { ready: false, prefix: '', calls: [], suffix: '' };
   }
+
+  // Try XML tool call extraction first.
+  const xmlResult = consumeXMLToolCaptureImpl(captured, toolNames, trimWrappingJSONFence);
+  if (xmlResult.ready) {
+    return xmlResult;
+  }
+  // If XML tags are present but block is incomplete, keep buffering.
+  if (hasOpenXMLToolTag(captured)) {
+    return { ready: false, prefix: '', calls: [], suffix: '' };
+  }
+
   const lower = captured.toLowerCase();
   const { index: keyIdx } = earliestKeywordIndex(lower, TOOL_SEGMENT_KEYWORDS);
   if (keyIdx < 0) {
@@ -231,52 +273,6 @@ function consumeToolCapture(state, toolNames) {
   };
 }
 
-function extractToolHistoryBlock(captured, keyIdx) {
-  if (typeof captured !== 'string' || keyIdx < 0 || keyIdx >= captured.length) {
-    return { ok: false, start: 0, end: 0 };
-  }
-  const rest = captured.slice(keyIdx).toLowerCase();
-  if (rest.startsWith('[tool_call_history]')) {
-    const closeTag = '[/tool_call_history]';
-    const closeIdx = rest.indexOf(closeTag);
-    if (closeIdx < 0) {
-      return { ok: false, start: 0, end: 0 };
-    }
-    return { ok: true, start: keyIdx, end: keyIdx + closeIdx + closeTag.length };
-  }
-  if (rest.startsWith('[tool_result_history]')) {
-    const closeTag = '[/tool_result_history]';
-    const closeIdx = rest.indexOf(closeTag);
-    if (closeIdx < 0) {
-      return { ok: false, start: 0, end: 0 };
-    }
-    return { ok: true, start: keyIdx, end: keyIdx + closeIdx + closeTag.length };
-  }
-  return { ok: false, start: 0, end: 0 };
-}
-
-function trimWrappingJSONFence(prefix, suffix) {
-  const rightTrimmedPrefix = (prefix || '').replace(/[ \t\r\n]+$/g, '');
-  const fenceIdx = rightTrimmedPrefix.lastIndexOf('```');
-  if (fenceIdx < 0) return { prefix, suffix };
-  const fenceCount = (rightTrimmedPrefix.slice(0, fenceIdx + 3).match(/```/g) || []).length;
-  if (fenceCount % 2 === 0) {
-    return { prefix, suffix };
-  }
-  const header = rightTrimmedPrefix.slice(fenceIdx + 3).trim().toLowerCase();
-  if (header && header !== 'json') {
-    return { prefix, suffix };
-  }
-  const leftTrimmedSuffix = (suffix || '').replace(/^[ \t\r\n]+/g, '');
-  if (!leftTrimmedSuffix.startsWith('```')) {
-    return { prefix, suffix };
-  }
-  const consumed = (suffix || '').length - leftTrimmedSuffix.length;
-  return {
-    prefix: rightTrimmedPrefix.slice(0, fenceIdx),
-    suffix: (suffix || '').slice(consumed + 3),
-  };
-}
 module.exports = {
   processToolSieveChunk,
   flushToolSieve,
