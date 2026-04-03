@@ -275,6 +275,26 @@ func TestHandleNonStreamFencedToolCallExamplePromotesToolCall(t *testing.T) {
 	TestHandleNonStreamFencedToolCallExampleDoesNotPromoteToolCall(t)
 }
 
+func TestHandleNonStreamReturns429WhenUpstreamOutputEmpty(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":""}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStream(rec, context.Background(), resp, "cid-empty", "deepseek-chat", "prompt", false, nil)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429 for empty upstream output, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	out := decodeJSONBody(t, rec.Body.String())
+	errObj, _ := out["error"].(map[string]any)
+	msg, _ := errObj["message"].(string)
+	if !strings.Contains(strings.ToLower(msg), "empty") {
+		t.Fatalf("expected empty-output hint in error message, got %#v", out)
+	}
+}
+
 func TestHandleStreamToolCallInterceptsWithoutRawContentLeak(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(

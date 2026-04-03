@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"ds2api/internal/auth"
@@ -106,6 +107,10 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 
 	finalThinking := result.Thinking
 	finalText := sanitizeLeakedOutput(result.Text)
+	if strings.TrimSpace(finalThinking) == "" && strings.TrimSpace(finalText) == "" {
+		writeOpenAIError(w, http.StatusTooManyRequests, "Upstream model returned empty output; please retry.")
+		return
+	}
 	respBody := openaifmt.BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText, toolNames)
 	if result.OutputTokens > 0 {
 		if usage, ok := respBody["usage"].(map[string]any); ok {

@@ -71,10 +71,29 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 			prefixPart, suffixPart = trimWrappingJSONFence(prefixPart, suffixPart)
 			return prefixPart, parsed, suffixPart, true
 		}
+		// If this block does not look like an executable tool-call payload,
+		// pass it through as normal content (e.g. user-requested XML snippets).
+		if !looksLikeExecutableXMLToolCallBlock(xmlBlock, pair.open) {
+			return prefixPart + xmlBlock, nil, suffixPart, true
+		}
 		// Looks like XML tool syntax but failed to parse — consume it to avoid leak.
 		return prefixPart, nil, suffixPart, true
 	}
 	return "", nil, "", false
+}
+
+func looksLikeExecutableXMLToolCallBlock(xmlBlock, openTag string) bool {
+	lower := strings.ToLower(xmlBlock)
+	// Agent wrapper tags are always treated as internal tool-call wrappers.
+	switch openTag {
+	case "<attempt_completion", "<ask_followup_question", "<new_task":
+		return true
+	}
+	return strings.Contains(lower, "<tool_name") ||
+		strings.Contains(lower, "<parameters") ||
+		strings.Contains(lower, `"tool"`) ||
+		strings.Contains(lower, `"tool_name"`) ||
+		strings.Contains(lower, `"name"`)
 }
 
 // hasOpenXMLToolTag returns true if captured text contains an XML tool opening tag
