@@ -352,7 +352,7 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 	}
 }
 
-func TestApplyCurrentInputFileLeavesHistoryTextEmpty(t *testing.T) {
+func TestApplyCurrentInputFileCarriesHistoryText(t *testing.T) {
 	ds := &inlineUploadDSStub{}
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{
@@ -377,8 +377,8 @@ func TestApplyCurrentInputFileLeavesHistoryTextEmpty(t *testing.T) {
 	if len(ds.uploadCalls) != 1 {
 		t.Fatalf("expected 1 upload call, got %d", len(ds.uploadCalls))
 	}
-	if out.HistoryText != "" {
-		t.Fatalf("expected current input file flow to leave history text empty, got %q", out.HistoryText)
+	if out.HistoryText != string(ds.uploadCalls[0].Data) {
+		t.Fatalf("expected current input file flow to preserve uploaded text in history, got %q", out.HistoryText)
 	}
 }
 
