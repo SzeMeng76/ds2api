@@ -171,6 +171,28 @@ func TestParseToolCallsKeepsHereDocCDATAWithFencedDSMLAndLiteralCDATAEnd(t *test
 	}
 }
 
+func TestParseToolCallsKeepsCompactCDATAWithImmediateFencedDSML(t *testing.T) {
+	content := strings.Join([]string{
+		"```xml",
+		`<|DSML|tool_calls>`,
+		`  <|DSML|invoke name="Bash">`,
+		`    <|DSML|parameter name="command"><![CDATA[echo compact]]></|DSML|parameter>`,
+		`  </|DSML|invoke>`,
+		`</|DSML|tool_calls>`,
+		"```",
+		"tail",
+	}, "\n")
+	text := `<tool_calls><invoke name="Write"><parameter name="content"><![CDATA[` + content + `]]></parameter></invoke></tool_calls>`
+
+	calls := ParseToolCalls(text, []string{"Write"})
+	if len(calls) != 1 {
+		t.Fatalf("expected one compact CDATA call, got %#v", calls)
+	}
+	if calls[0].Input["content"] != content {
+		t.Fatalf("expected compact CDATA content to survive, got %#v", calls[0].Input["content"])
+	}
+}
+
 func TestParseToolCallsPreservesSimpleCDATAInlineMarkupAsText(t *testing.T) {
 	text := `<tool_calls><invoke name="Write"><parameter name="description"><![CDATA[<b>urgent</b>]]></parameter></invoke></tool_calls>`
 	calls := ParseToolCalls(text, []string{"Write"})

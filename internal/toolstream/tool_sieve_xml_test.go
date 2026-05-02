@@ -331,6 +331,51 @@ func TestProcessToolSieveKeepsExtremeHereDocCDATAUntilOuterClose(t *testing.T) {
 	}
 }
 
+func TestProcessToolSieveKeepsCompactCDATAWithImmediateFencedDSML(t *testing.T) {
+	var state State
+	content := strings.Join([]string{
+		"```xml",
+		`<|DSML|tool_calls>`,
+		`  <|DSML|invoke name="Bash">`,
+		`    <|DSML|parameter name="command"><![CDATA[echo compact]]></|DSML|parameter>`,
+		`  </|DSML|invoke>`,
+		`</|DSML|tool_calls>`,
+		"```",
+		"tail",
+	}, "\n")
+	chunks := []string{
+		`<tool_calls><invoke name="Write"><parameter name="content"><![CDATA[` + content[:len("```xml\n")],
+		content[len("```xml\n"):],
+		`]]></parameter></invoke></tool_calls>`,
+	}
+
+	var events []Event
+	for _, c := range chunks {
+		events = append(events, ProcessChunk(&state, c, []string{"Write"})...)
+	}
+	events = append(events, Flush(&state, []string{"Write"})...)
+
+	var textContent strings.Builder
+	var gotContent string
+	toolCalls := 0
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		if len(evt.ToolCalls) > 0 {
+			toolCalls += len(evt.ToolCalls)
+			gotContent, _ = evt.ToolCalls[0].Input["content"].(string)
+		}
+	}
+	if toolCalls != 1 {
+		t.Fatalf("expected one compact CDATA tool call, got %d events=%#v", toolCalls, events)
+	}
+	if textContent.Len() != 0 {
+		t.Fatalf("expected no leaked text, got %q", textContent.String())
+	}
+	if gotContent != content {
+		t.Fatalf("expected compact CDATA content to survive, got len=%d want=%d", len(gotContent), len(content))
+	}
+}
+
 func TestProcessToolSieveFallsBackWhenCDATANeverCloses(t *testing.T) {
 	var state State
 	chunks := []string{

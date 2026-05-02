@@ -216,6 +216,7 @@ func updateCDATAStateForStrip(inCDATA bool, cdataFenceMarker, line string) (bool
 	pos := 0
 	state := inCDATA
 	fenceMarker := cdataFenceMarker
+	lineForFence := line
 	if !state {
 		start := strings.Index(lower[pos:], "<![cdata[")
 		if start < 0 {
@@ -223,12 +224,13 @@ func updateCDATAStateForStrip(inCDATA bool, cdataFenceMarker, line string) (bool
 		}
 		pos += start + len("<![cdata[")
 		state = true
+		lineForFence = line[pos:]
 	}
 	if !state {
 		return false, ""
 	}
 
-	trimmed := strings.TrimLeft(line, " \t")
+	trimmed := strings.TrimLeft(lineForFence, " \t")
 	if fenceMarker == "" {
 		if marker, ok := parseFenceOpen(trimmed); ok {
 			fenceMarker = marker
