@@ -204,7 +204,7 @@ func IsPartialToolMarkupTagPrefix(text string) bool {
 		if hasToolMarkupNamePrefix(text, i) {
 			return true
 		}
-		if hasDSMLPrefix(text, i) {
+		if hasASCIIPartialPrefixFoldAt(text, i, "dsml") {
 			return true
 		}
 		next, ok := consumeToolMarkupNamePrefixOnce(text, i)
@@ -245,15 +245,13 @@ func consumeToolMarkupNamePrefixOnce(text string, idx int) (int, bool) {
 	return idx, false
 }
 
-// hasDSMLPrefix checks if "dsml" starts with text[start:] (case-insensitive).
-func hasDSMLPrefix(text string, start int) bool {
-	const dsml = "dsml"
+func hasASCIIPartialPrefixFoldAt(text string, start int, prefix string) bool {
 	remain := len(text) - start
-	if remain <= 0 || remain > len(dsml) {
+	if remain <= 0 || remain > len(prefix) {
 		return false
 	}
 	for j := 0; j < remain; j++ {
-		if asciiLower(text[start+j]) != dsml[j] {
+		if asciiLower(text[start+j]) != asciiLower(prefix[j]) {
 			return false
 		}
 	}
@@ -265,18 +263,8 @@ func hasToolMarkupNamePrefix(text string, start int) bool {
 		if hasASCIIPrefixFoldAt(text, start, name.raw) {
 			return true
 		}
-		tailLen := len(text) - start
-		if tailLen > 0 && tailLen <= len(name.raw) {
-			match := true
-			for j := 0; j < tailLen; j++ {
-				if asciiLower(text[start+j]) != asciiLower(name.raw[j]) {
-					match = false
-					break
-				}
-			}
-			if match {
-				return true
-			}
+		if hasASCIIPartialPrefixFoldAt(text, start, name.raw) {
+			return true
 		}
 	}
 	return false
